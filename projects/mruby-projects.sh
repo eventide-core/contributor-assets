@@ -1,4 +1,4 @@
 mruby_projects=(
-  mruby-dir
+  mruby-kernel-dir
   mruby-require
 )
