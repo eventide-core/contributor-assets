@@ -89,4 +89,6 @@ echo "Getting code from $remote_authority_path ($remote_name)"
 echo "= = ="
 echo
 
-get-project "mruby-require"
+for project in "${projects[@]}"; do
+  get-project $project
+done
