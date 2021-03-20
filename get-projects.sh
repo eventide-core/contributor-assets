@@ -3,6 +3,7 @@
 set -eu -o pipefail
 
 source ./utilities/run-cmd.sh
+source ./projects/projects.sh
 
 echo
 echo "Get Projects"
@@ -19,30 +20,26 @@ if [ ! -z ${GIT_AUTHORITY_PATH:-} ]; then
   echo "The GIT_AUTHORITY_PATH environment variable is set: $GIT_AUTHORITY_PATH. It will be used for this script."
   remote_authority_path=$GIT_AUTHORITY_PATH
 else
-  remote_authority_path="git@github.com:ntl"
+  remote_authority_path="git@github.com:esc-rb"
 fi
 
 if [ ! -z ${GIT_REMOTE_NAME:-} ]; then
   echo "The GIT_REMOTE_NAME environment variable is set: $GIT_REMOTE_NAME. It will be used for this script."
-  git_remote_name=$GIT_REMOTE_NAME
+  remote_name=$GIT_REMOTE_NAME
 else
-  git_remote_name=origin
+  remote_name=origin
 fi
 
 function clone-project {
   name=$1
-  branch=${2:-}
+  branch=${2:-main}
   authority=${3:-$remote_authority_path}
 
   remote_repository_url="$authority/$name.git"
 
   echo "Cloning: $remote_repository_url"
 
-  if [ ! -z $branch ]; then
-    clone_cmd="git -C $ESC_HOME clone -b $branch $remote_repository_url"
-  else
-    clone_cmd="git -C $ESC_HOME clone $remote_repository_url"
-  fi
+  clone_cmd="git -C $ESC_HOME clone -b $branch $remote_repository_url"
 
   run-cmd "$clone_cmd"
 }
@@ -57,9 +54,9 @@ function pull-project {
   current_branch=$(git -C $ESC_HOME/$name symbolic-ref --short HEAD)
 
   if [ $current_branch = $branch ]; then
-    run-cmd "git -C $ESC_HOME/$name pull --rebase $git_remote_name $branch"
+    run-cmd "git -C $ESC_HOME/$name pull --rebase $remote_name $branch"
   else
-    run-cmd "git -C $ESC_HOME/$name fetch $git_remote_name $branch:$branch"
+    run-cmd "git -C $ESC_HOME/$name fetch $remote_name $branch:$branch"
   fi
 }
 
@@ -80,4 +77,16 @@ function get-project {
   echo
 }
 
+echo
+echo "Getting MRuby"
+echo "- - -"
+echo
+
 get-project "mruby" "stable" "git@github.com:mruby"
+
+echo
+echo "Getting code from $remote_authority_path ($remote_name)"
+echo "= = ="
+echo
+
+get-project "mruby-require"
