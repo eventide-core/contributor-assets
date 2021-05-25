@@ -78,13 +78,6 @@ function get-project {
 }
 
 echo
-echo "Getting MRuby"
-echo "- - -"
-echo
-
-get-project "mruby" "stable" "git@github.com:mruby"
-
-echo
 echo "Getting code from $remote_authority_path ($remote_name)"
 echo "= = ="
 echo
