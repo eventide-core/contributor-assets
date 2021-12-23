@@ -1,3 +1,3 @@
 native_projects=(
-  example-native-skeleton
+  template-native-library
 )
