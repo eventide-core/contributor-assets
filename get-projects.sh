@@ -1,87 +1,105 @@
 #!/usr/bin/env bash
 
-set -eu -o pipefail
+set -eEuo pipefail
 
-source ./utilities/run-cmd.sh
-source ./projects/projects.sh
+trap 'printf "\n\e[31mError: Exit Status %s (%s)\e[m\n" $? "$(basename "$0")"' ERR
+
+cd "$(dirname "$0")"
+
+echo
+echo "Start ($(basename "$0"))"
 
 echo
 echo "Get Projects"
 echo "= = ="
+
+if [ -z ${DRY_RUN+x} ]; then
+  DRY_RUN=false
+fi
+
 echo
 
-if [ -z ${ESC_HOME:-} ]; then
-  echo "ESC_HOME is not set; aborting"
-  echo
+if [ -z ${PROJECTS_HOME+x} ]; then
+  echo "PROJECTS_HOME is not set"
   exit 1
 fi
 
-if [ ! -z ${GIT_AUTHORITY_PATH:-} ]; then
+remote_authority_path="git@github.com:esc-rb"
+
+if [ ! -z ${GIT_AUTHORITY_PATH+x} ]; then
   echo "The GIT_AUTHORITY_PATH environment variable is set: $GIT_AUTHORITY_PATH. It will be used for this script."
   remote_authority_path=$GIT_AUTHORITY_PATH
-else
-  remote_authority_path="git@github.com:esc-rb"
 fi
 
-if [ ! -z ${GIT_REMOTE_NAME:-} ]; then
-  echo "The GIT_REMOTE_NAME environment variable is set: $GIT_REMOTE_NAME. It will be used for this script."
-  remote_name=$GIT_REMOTE_NAME
-else
-  remote_name=origin
-fi
-
-function clone-project {
+function clone-repo {
   name=$1
-  branch=${2:-main}
-  authority=${3:-$remote_authority_path}
 
-  remote_repository_url="$authority/$name.git"
+  remote_repository_url="$remote_authority_path/$name.git"
 
   echo "Cloning: $remote_repository_url"
 
-  clone_cmd="git -C $ESC_HOME clone -b $branch $remote_repository_url"
-
+  clone_cmd="git clone $remote_repository_url"
   run-cmd "$clone_cmd"
 }
 
-function pull-project {
-  name=$1
-  branch=${2:-main}
-  authority=${3:-$remote_authority_path}
-
-  echo "Pulling: $name ($branch branch only)"
-
-  current_branch=$(git -C $ESC_HOME/$name symbolic-ref --short HEAD)
-
-  if [ $current_branch = $branch ]; then
-    run-cmd "git -C $ESC_HOME/$name pull --rebase $remote_name $branch"
-  else
-    run-cmd "git -C $ESC_HOME/$name fetch $remote_name $branch:$branch"
-  fi
-}
-
-function get-project {
+function pull-repo {
   name=$1
 
-  echo $name
-  echo "- - -"
+  echo "Pulling: $name (master branch only)"
 
-  dir="$ESC_HOME/$name"
+  dir=$name
+  pushd $dir > /dev/null
 
-  if [ ! -d "$dir/.git" ]; then
-    clone-project $@
-  else
-    pull-project $@
+  current_branch=$(git branch --no-color 2> /dev/null | sed -e '/^[^*]/d' -e 's/* \(.*\)/\1/')
+  if [ master != $current_branch ]; then
+    checkout_cmd="git checkout master"
+    run-cmd "$checkout_cmd"
   fi
 
-  echo
+  pull_cmd="git pull --rebase $remote_name master"
+  run-cmd "$pull_cmd"
+
+  if [ master != "$current_branch" ]; then
+    co_crnt_cmd="git checkout $current_branch"
+    run-cmd "$co_crnt_cmd"
+  fi
+
+  popd > /dev/null
 }
+
+source ./projects/projects.sh
+source ./utilities/run-cmd.sh
+
+working_copies=(
+  "${projects[@]}"
+)
+
+remote_name=${1:-}
+if [ -z "$remote_name" ]; then
+  echo "The remote was not specified as the argument to this script. Using \"origin\" by default."
+  remote_name="origin"
+fi
 
 echo
 echo "Getting code from $remote_authority_path ($remote_name)"
-echo "= = ="
-echo
 
-for project in "${projects[@]}"; do
-  get-project $project
+pushd $PROJECTS_HOME > /dev/null
+
+for name in "${working_copies[@]}"; do
+  echo $name
+  echo "- - -"
+
+  dir=$name
+
+  if [ ! -d "$dir/.git" ]; then
+    clone-repo $name
+  else
+    pull-repo $name
+  fi
+
+  echo
 done
+
+popd > /dev/null
+
+echo "Done ($(basename "$0"))"
