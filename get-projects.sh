@@ -24,7 +24,7 @@ if [ -z ${PROJECTS_HOME+x} ]; then
   exit 1
 fi
 
-remote_authority_path="git@github.com:esc-rb"
+remote_authority_path="git@github.com:evt-rb"
 
 if [ ! -z ${GIT_AUTHORITY_PATH+x} ]; then
   echo "The GIT_AUTHORITY_PATH environment variable is set: $GIT_AUTHORITY_PATH. It will be used for this script."
