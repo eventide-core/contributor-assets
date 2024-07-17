@@ -9,97 +9,135 @@ cd "$(dirname "$0")"
 echo
 echo "Start ($(basename "$0"))"
 
+export GIT_CONFIG=/dev/null
+
+source settings.sh
+
 echo
 echo "Get Projects"
 echo "= = ="
-
-if [ -z ${DRY_RUN+x} ]; then
-  DRY_RUN=false
-fi
-
 echo
 
-if [ -z ${PROJECTS_HOME+x} ]; then
-  echo "PROJECTS_HOME is not set"
-  exit 1
-fi
+echo "Projects Home: $PROJECTS_HOME"
+echo "Remote Authority Path: $GIT_AUTHORITY_PATH"
+echo "Remote Name: $GIT_REMOTE_NAME"
+echo "Default Branch: $GIT_DEFAULT_BRANCH"
 
-remote_authority_path="git@github.com:evt-rb"
+autostash=${AUTOSTASH:-off}
+parallel=${GET_PROJECTS_PARALLEL:-off}
 
-if [ ! -z ${GIT_AUTHORITY_PATH+x} ]; then
-  echo "The GIT_AUTHORITY_PATH environment variable is set: $GIT_AUTHORITY_PATH. It will be used for this script."
-  remote_authority_path=$GIT_AUTHORITY_PATH
-fi
+echo
+echo "Parallel: $parallel"
+echo "Autostash: $autostash"
 
-function clone-repo {
-  name=$1
+source ./projects/projects.sh
 
-  remote_repository_url="$remote_authority_path/$name.git"
+./archive-projects.sh
+
+export run_cmd_path="$(realpath ./run-cmd.sh)"
+function run-cmd() {
+  cmd=$1
+
+  $run_cmd_path "$1"
+}
+export -f run-cmd
+
+function clone-repo() {
+  local name=$1
+
+  remote_repository_url="$GIT_AUTHORITY_PATH/$name.git"
 
   echo "Cloning: $remote_repository_url"
 
   clone_cmd="git clone $remote_repository_url"
   run-cmd "$clone_cmd"
 }
+export -f clone-repo
 
-function pull-repo {
-  name=$1
+function pull-repo() {
+  local name=$1
 
-  echo "Pulling: $name (master branch only)"
+  echo "Pulling: $name ($GIT_DEFAULT_BRANCH branch only)"
 
-  dir=$name
-  pushd $dir > /dev/null
+  dir="$PROJECTS_HOME/$name"
+  cd "$dir"
 
-  current_branch=$(git branch --no-color 2> /dev/null | sed -e '/^[^*]/d' -e 's/* \(.*\)/\1/')
-  if [ master != $current_branch ]; then
-    checkout_cmd="git checkout master"
+  if [ "$autostash" = "on" ]; then
+    autostash_flag="--autostash"
+  else
+    if ! git diff --quiet; then
+      echo
+      echo "Working tree is dirty, aborting ($name)"
+      echo
+      false
+    fi
+
+    autostash_flag="--no-autostash"
+  fi
+
+  current_branch=$(git branch --no-color 2> /dev/null | sed -n -e 's/* \(.*\)/\1/p')
+  if [ master != "$current_branch" ]; then
+    checkout_cmd="git checkout $GIT_DEFAULT_BRANCH"
     run-cmd "$checkout_cmd"
   fi
 
-  pull_cmd="git pull --rebase $remote_name master"
+  pull_cmd="git pull $autostash_flag --rebase=merges $GIT_REMOTE_NAME $GIT_DEFAULT_BRANCH"
   run-cmd "$pull_cmd"
 
-  if [ master != "$current_branch" ]; then
-    co_crnt_cmd="git checkout $current_branch"
-    run-cmd "$co_crnt_cmd"
+  if [ "$current_branch" != "$GIT_DEFAULT_BRANCH" ]; then
+    co_current_cmd="git checkout $current_branch --quiet"
+    run-cmd "$co_current_cmd"
   fi
-
-  popd > /dev/null
 }
+export -f pull-repo
 
-source ./projects/projects.sh
-source ./utilities/run-cmd.sh
+function update-repo() {
+  name=$1
+
+  echo
+  echo "$name"
+  echo "- - -"
+
+  cd "$PROJECTS_HOME"
+
+  dir=$name
+
+  if [ ! -d "$dir/.git" ]; then
+    clone-repo "$name"
+  else
+    pull-repo "$name"
+  fi
+}
+export -f update-repo
 
 working_copies=(
   "${projects[@]}"
 )
 
-remote_name=${1:-}
-if [ -z "$remote_name" ]; then
-  echo "The remote was not specified as the argument to this script. Using \"origin\" by default."
-  remote_name="origin"
+echo
+echo "Getting code from $GIT_AUTHORITY_PATH ($GIT_REMOTE_NAME)"
+
+if [ "$parallel" = "on" ] && command -v parallel >/dev/null; then
+  jobs=${GET_PROJECTS_PARALLEL_JOBS:-16}
+
+  function update {
+    slot="$2"
+
+    if [ -z "${GIT_SSH_COMMAND:-}" ]; then
+      control_path="$TMPDIR/%r@%h:%p-$slot"
+      export GIT_SSH_COMMAND="ssh -o ControlMaster=auto -o ControlPersist=1m -o ControlPath=$control_path -o Compression=yes"
+    fi
+
+    update-repo "$1"
+  }
+  export -f update
+
+  parallel --jobs "$jobs" --halt now,fail=1 update "{}" "{%}" ::: "${working_copies[@]}"
+else
+  for name in "${working_copies[@]}"; do
+    update-repo "$name"
+  done
 fi
 
 echo
-echo "Getting code from $remote_authority_path ($remote_name)"
-
-pushd $PROJECTS_HOME > /dev/null
-
-for name in "${working_copies[@]}"; do
-  echo $name
-  echo "- - -"
-
-  dir=$name
-
-  if [ ! -d "$dir/.git" ]; then
-    clone-repo $name
-  else
-    pull-repo $name
-  fi
-
-  echo
-done
-
-popd > /dev/null
-
 echo "Done ($(basename "$0"))"
