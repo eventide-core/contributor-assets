@@ -1,3 +1,4 @@
-mruby_projects=(
+ruby_projects=(
+  digest-hash
   pseudorandom
 )
